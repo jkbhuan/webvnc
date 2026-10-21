@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>webVNC 开发札记</title>
+<style>
+  :root {
+    --bg: #fbfbfa;
+    --fg: #23262b;
+    --muted: #6b7280;
+    --line: #e3e4e8;
+    --accent: #2b6cb0;
+    --accent-soft: #eef4fb;
+    --code-bg: #f5f6f8;
+    --warn-bg: #fff8e6;
+    --warn-line: #e8b931;
+    --danger-bg: #fdf0ef;
+    --danger-line: #d9503f;
+    --ok-bg: #eefaf1;
+    --ok-line: #3f9b5f;
+    --maxw: 1180px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC",
+                 "Noto Sans CJK SC", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  code, pre, .mono {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo,
+                 "Cascadia Mono", "Microsoft YaHei Mono", monospace;
+  }
+
+  /* ---------- 布局 ---------- */
+
+  .wrap {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 0 24px 120px;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 48px;
+    align-items: start;
+  }
+
+  @media (max-width: 940px) {
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .toc { position: static !important; max-height: none !important; margin-bottom: 8px; }
+    .toc nav { display: none; }
+    .toc.open nav { display: block; }
+  }
+
+  /* ---------- 页头 ---------- */
+
+  header.head {
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+    margin-bottom: 40px;
+  }
+
+  header.head .inner {
+    max-width: var(--maxw);
+    margin: 0 auto;
+    padding: 52px 24px 40px;
+  }
+
+  header.head h1 {
+    margin: 0 0 12px;
+    font-size: 2.05rem;
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+  }
+
+  header.head .sub {
+    margin: 0;
+    color: var(--muted);
+    font-size: 1.02rem;
+  }
+
+  header.head .meta {
+    margin-top: 22px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip {
+    display: inline-block;
+    font-size: 0.8rem;
+    padding: 3px 11px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border: 1px solid #d6e4f5;
+    line-height: 1.6;
+  }
+
+  .chip.gray { background: #f3f4f6; color: var(--muted); border-color: var(--line); }
+
+  /* ---------- 目录 ---------- */
+
+  .toc {
+    position: sticky;
+    top: 24px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    font-size: 0.88rem;
+    padding-top: 4px;
+  }
+
+  .toc .toc-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 600;
+    font-size: 0.76rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+
+  .toc .toggle {
+    display: none;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    padding: 1px 8px;
+    cursor: pointer;
+  }
+
+  @media (max-width: 940px) { .toc .toggle { display: block; } }
+
+  .toc ol { list-style: none; margin: 0; padding: 0; }
+
+  .toc li { margin: 1px 0; }
+
+  .toc a {
+    display: block;
+    padding: 4px 10px;
+    color: #4b5563;
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    border-radius: 0 4px 4px 0;
+    line-height: 1.5;
+  }
+
+  .toc a:hover { background: #f1f3f6; color: var(--fg); }
+
+  .toc a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: var(--accent-soft);
+    font-weight: 600;
+  }
+
+  .toc .sub a { padding-left: 24px; font-size: 0.84rem; color: #6b7280; }
+
+  /* ---------- 标题 ---------- */
+
+  main { min-width: 0; }
+
+  h2 {
+    font-size: 1.5rem;
+    margin: 56px 0 18px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+    scroll-margin-top: 20px;
+  }
+
+  h2:first-child { margin-top: 8px; }
+
+  h3 {
+    font-size: 1.13rem;
+    margin: 38px 0 12px;
+    scroll-margin-top: 20px;
+  }
+
+  h4 {
+    font-size: 1rem;
+    margin: 26px 0 10px;
+    color: #374151;
+    scroll-margin-top: 20px;
+  }
+
+  p { margin: 0 0 14px; }
+
+  a { color: var(--accent); }
+
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin: 5px 0; }
+
+  /* ---------- 代码 ---------- */
+
+  code {
+    background: var(--code-bg);
+    padding: 0.14em 0.4em;
+    border-radius: 4px;
+    font-size: 0.87em;
+    border: 1px solid #e8eaee;
+    color: #b03060;
+    word-break: break-word;
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-left: 3px solid #c9cdd6;
+    border-radius: 6px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 0 0 16px;
+    line-height: 1.6;
+  }
+
+  pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #2d3748;
+    font-size: 0.855rem;
+    white-space: pre;
+  }
+
+  /* ---------- 表格 ---------- */
+
+  .tw { overflow-x: auto; margin: 0 0 18px; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.9rem;
+    background: #fff;
+  }
+
+  th, td {
+    border: 1px solid var(--line);
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: #f6f7f9;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  tbody tr:nth-child(even) { background: #fcfcfd; }
+
+  /* ---------- 提示块 ---------- */
+
+  blockquote {
+    margin: 0 0 16px;
+    padding: 12px 16px;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 6px 6px 0;
+    color: #2c4a6e;
+  }
+
+  blockquote p:last-child { margin-bottom: 0; }
+
+  .callout {
+    margin: 0 0 16px;
+    padding: 12px 16px 12px 46px;
+    border-radius: 6px;
+    position: relative;
+    font-size: 0.94rem;
+    line-height: 1.7;
+  }
+
+  .callout::before {
+    position: absolute;
+    left: 15px;
+    top: 11px;
+    font-size: 1rem;
+    line-height: 1.7;
+  }
+
+  .callout p:last-child { margin-bottom: 0; }
+  .callout strong:first-child { display: inline; }
+
+  .callout.warn {
+    background: var(--warn-bg);
+    border: 1px solid #f0dfae;
+    border-left: 3px solid var(--warn-line);
+  }
+  .callout.warn::before { content: "⚠"; color: #b8860b; }
+
+  .callout.danger {
+    background: var(--danger-bg);
+    border: 1px solid #f3cdc8;
+    border-left: 3px solid var(--danger-line);
+  }
+  .callout.danger::before { content: "✕"; color: var(--danger-line); font-weight: 700; }
+
+  .callout.ok {
+    background: var(--ok-bg);
+    border: 1px solid #c9e7d3;
+    border-left: 3px solid var(--ok-line);
+  }
+  .callout.ok::before { content: "✓"; color: var(--ok-line); font-weight: 700; }
+
+  /* ---------- 坑卡片 ---------- */
+
+  .pit {
+    border: 1px solid var(--line);
+    border-left: 3px solid #d9503f;
+    border-radius: 6px;
+    background: #fff;
+    padding: 16px 18px 6px;
+    margin: 0 0 18px;
+  }
+
+  .pit > h4 {
+    margin: 0 0 10px;
+    color: #a83b2c;
+    font-size: 1rem;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .pit > h4 .n {
+    flex: 0 0 auto;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #fff;
+    background: #d9503f;
+    border-radius: 4px;
+    padding: 1px 7px;
+    position: relative;
+    top: -1px;
+  }
+
+  .pit p:last-child, .pit pre:last-child, .pit .tw:last-child { margin-bottom: 12px; }
+
+  .lesson {
+    margin: 0 0 18px;
+    padding: 14px 18px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+  }
+
+  .lesson h3 {
+    margin: 0 0 8px;
+    font-size: 1rem;
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+  }
+
+  .lesson h3 .n {
+    flex: 0 0 auto;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #fff;
+    background: var(--accent);
+    border-radius: 50%;
+    width: 1.5em;
+    height: 1.5em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    top: -1px;
+  }
+
+  .lesson p:last-child { margin-bottom: 0; }
+
+  /* ---------- 状态标记 ---------- */
+
+  .st {
+    display: inline-block;
+    font-size: 0.78rem;
+    padding: 1px 9px;
+    border-radius: 4px;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .st.done { background: var(--ok-bg); color: #2f7a49; border: 1px solid #c9e7d3; }
+  .st.hold { background: #f3f4f6; color: #6b7280; border: 1px solid var(--line); }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--line);
+    margin: 40px 0;
+  }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.86rem;
+  }
+</style>
+</head>
+<body>
+
+<header class="head">
+  <div class="inner">
+    <h1>webVNC 开发札记</h1>
+    <p class="sub">剪贴板双向同步 / 滚轮方向 / 手机触摸操作 —— 方案、验证与踩过的坑</p>
+    <div class="meta">
+      <span class="chip">2026-09-27</span>
+      <span class="chip">Go + Vue 3 远程桌面</span>
+      <span class="chip gray">Windows 11 build 26100</span>
+      <span class="chip gray">CGO_ENABLED=0</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+<div class="layout">
+
+  <aside class="toc">
+    <div class="toc-title">
+      <span>目录</span>
+      <button class="toggle" type="button" onclick="this.closest('.toc').classList.toggle('open')">展开</button>
+    </div>
+    <nav>
+      <ol>
+        <li><a href="#s0">0. 总览</a></li>
+        <li><a href="#s1">1. 剪贴板双向同步</a></li>
+        <li class="sub"><a href="#s1-1">1.1 问题</a></li>
+        <li class="sub"><a href="#s1-2">1.2 方案</a></li>
+        <li class="sub"><a href="#s1-3">1.3 验证</a></li>
+        <li class="sub"><a href="#s1-4">1.4 踩过的坑</a></li>
+        <li><a href="#s2">2. 滚轮方向反了</a></li>
+        <li><a href="#s2-1">2.1 问题</a></li>
+        <li class="sub"><a href="#s2-2">2.2 根因</a></li>
+        <li class="sub"><a href="#s2-3">2.3 方案</a></li>
+        <li class="sub"><a href="#s2-4">2.4 验证</a></li>
+        <li><a href="#s3">3. 手机触摸操作</a></li>
+        <li class="sub"><a href="#s3-2">3.2 设计决定</a></li>
+        <li class="sub"><a href="#s3-3">3.3 状态机</a></li>
+        <li class="sub"><a href="#s3-5">3.5 验证</a></li>
+        <li class="sub"><a href="#s3-6">3.6 踩过的坑</a></li>
+        <li><a href="#s4">4. 附：光标为什么看不见</a></li>
+        <li><a href="#s5">5. 通用教训</a></li>
+        <li><a href="#files">附：改动文件</a></li>
+      </ol>
+    </nav>
+  </aside>
+
+  <main>
+
+  <p>这份文档记录三轮改动和一次调研的完整过程：<strong>要解决什么、方案是什么、怎么验证的、以及在哪里摔过跤</strong>。</p>
+
+  <p>坑的部分写得比方案详细，因为方案在代码里能读出来，而坑读完代码也未必看得出来——它们要么写在注释里（希望你别踩），要么只存在于"当时为什么这么改"的记忆里。</p>
+
+  <h2 id="s0">0. 总览</h2>
+
+  <div class="tw">
+  <table>
+    <thead>
+      <tr><th>#</th><th>改动</th><th>层</th><th>规模</th><th>状态</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td>剪贴板双向同步</td>
+        <td>前后端 + 协议</td>
+        <td><code>clipboard_windows.go</code> 重写、新增 2 个上行消息</td>
+        <td><span class="st done">已完成</span></td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td>滚轮方向</td>
+        <td>纯服务端</td>
+        <td><code>handleWheel</code> 一处符号</td>
+        <td><span class="st done">已完成</span></td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td>手机触摸操作</td>
+        <td>纯前端</td>
+        <td>新增 <code>touch.ts</code>、改 <code>RemoteScreen.vue</code> / <code>App.vue</code></td>
+        <td><span class="st done">已完成</span></td>
+      </tr>
+      <tr>
+        <td>4</td>
+        <td>远程光标合成</td>
+        <td>服务端</td>
+        <td>——</td>
+        <td><span class="st hold">仅调研，未实施</span></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>三轮改动里，<strong>触摸那轮踩的坑最多</strong>，因为它是唯一一次在"没有测试框架的前端"里加一块有状态逻辑；<strong>剪贴板那轮踩的坑最深</strong>，因为它碰的是 Win32 里文档最容易骗人的一块。</p>
+
+  <hr>
+
+  <h2 id="s1">1. 剪贴板双向同步</h2>
+
+  <h3 id="s1-1">1.1 问题</h3>
+
+  <blockquote>
+    <p>通过 https 连接点击「粘贴文本」按钮有效果了，但是 Ctrl+C/V 还是不行，而且文字复制不出来。</p>
+  </blockquote>
+
+  <p>原本只有一个方向：点按钮 → 用 <code>text_input</code> 把文字打进远程。这条路径绕开了剪贴板，所以"有 input 框的地方能粘贴"，但任何<strong>依赖剪贴板本身</strong>的场景都不行——右键菜单里的「粘贴」、需要重新读取剪贴板的程序、以及最关键的 <code>Ctrl+V</code> 习惯。</p>
+
+  <h3 id="s1-2">1.2 方案</h3>
+
+  <p>先定两个方向：</p>
+
+  <ul>
+    <li><strong>送出（本机 → 远程）</strong>：<code>Ctrl+V</code> 时把本机剪贴板文本推到远程剪贴板，<strong>再在远程按一个真正的 <code>Ctrl+V</code></strong>。</li>
+    <li><strong>取回（远程 → 本机）</strong>：<code>Ctrl+C</code> / <code>Ctrl+X</code> 时按键照常转发（远程应用正常复制），<strong>松开按键时</strong>再把远程剪贴板拉回本机。</li>
+  </ul>
+
+  <div class="callout ok">
+    <p><strong>为什么选"推送 + 合成 Ctrl+V"而不是继续用 <code>text_input</code>：</strong>合成按键之后，走的是远程应用<strong>自己的</strong>粘贴路径。这意味着 URL 会变成链接、表格会变成真表格、终端里会走终端的粘贴语义。<code>text_input</code> 只是把字符敲进去，永远做不到这些。</p>
+  </div>
+
+  <p>协议新增：</p>
+
+<pre><code>上行（浏览器 → 服务端）：
+  { "type": "clipboard_pull" }                    // 取回远程剪贴板
+  { "type": "clipboard_push", "text": "..." }     // 写入远程剪贴板
+
+下行（服务端 → 浏览器）：
+  { "type": "clipboard", "op": "pull"|"push", "ok": true, "text": "...", "error": "" }</code></pre>
+
+  <p><code>ok: false</code> <strong>只保留给真正的失败</strong>（比如剪贴板被锁死）。空 <code>text</code> 配 <code>ok: true</code> 是"远程剪贴板里没有文本"这个正常状态，两者在 UI 上必须给不同的话术。</p>
+
+  <h3 id="s1-3">1.3 验证</h3>
+
+  <p>新建了一个临时的 live 测试文件（5 个测试，跑完即删）。最关键的一条是：</p>
+
+  <p><strong><code>TestClipboardLiveWriteVisibleToAnotherProcess</code></strong> —— 通过真的 websocket 推一段中文进去，然后用<strong>另一个进程</strong>的 PowerShell <code>Get-Clipboard</code> 读回来。</p>
+
+  <p>这条测试是整轮里唯一有决定性的验证。原因见 <a href="#pit-clip-8">坑 8</a>：用自己的读函数去读自己写的内容，<strong>只能证明自洽，不能证明写对了</strong>。</p>
+
+  <p>另外补了一条 websocket 契约测试，钉住 JSON 字段名——前端 <code>ws.ts</code> 和服务端 <code>ws.go</code> 之间的字段名不匹配，在直接调 Win32 的测试里是<strong>完全看不见</strong>的。</p>
+
+  <h3 id="s1-4">1.4 踩过的坑</h3>
+
+  <div class="pit" id="pit-clip-1">
+    <h4><span class="n">坑 1</span><span><code>OpenClipboard(NULL)</code> 的文档是错的</span></h4>
+    <p>三处微软文档都写着：用 <code>NULL</code> 作为 <code>hwnd</code> 打开剪贴板，会让 <code>EmptyClipboard</code> 把剪贴板所有者设成 <code>NULL</code>，从而<strong>"导致 <code>SetClipboardData</code> 失败"</strong>。</p>
+    <p>按文档的推论，必须建一个隐藏的 <code>HWND_MESSAGE</code> 窗口来当 owner，为此还要 <code>runtime.LockOSThread</code> 加一个专用 goroutine 和 channel 来收发窗口消息。复杂度很大。</p>
+    <p><strong>实测（Windows 11 build 26100）：直接就能用。</strong></p>
+    <p>所以这里的处理是：<strong>不定案于文档，定案于实证</strong>。写了一个跨进程读回的测试（<a href="#s1-3">1.3</a>），通过就不要那个隐藏窗口。</p>
+    <p>判断依据是<strong>失败的形态</strong>：如果这条路真的走不通，表现是<strong>响亮的</strong>——<code>SetClipboardData</code> 返回 0，用户在状态栏看到"远程剪贴板写入失败"。它不会静默地写错内容。为一个会大声报错、且实测不存在的风险，预先引入一个窗口 + 专用线程 + 消息循环，不划算。</p>
+    <div class="callout warn">
+      <p>这条已经单独记进项目记忆（<code>win32-clipboard-null-owner-works.md</code>），防止未来某一轮"照着文档把它修好"。</p>
+    </div>
+  </div>
+
+  <div class="pit" id="pit-clip-2">
+    <h4><span class="n">坑 2</span><span><code>LazyProc.Call</code> 永远返回非 nil 的 error，且这个 error 会说谎</span></h4>
+    <p>这是整轮里<strong>最危险</strong>的一个发现。</p>
+    <p><code>syscall.LazyProc.Call</code> 的签名是 <code>(r1, r2 uintptr, lastErr error)</code>，<code>lastErr</code> <strong>永远非 nil</strong>。当调用失败但系统没有设置 last error 时，它返回 <code>Errno(0)</code>——而 <code>Errno(0).Error()</code> 是：</p>
+<pre><code>The operation completed successfully.</code></pre>
+    <p>原来的代码用 <code>%w</code> 包了这个 error。这句话会<strong>原样出现在浏览器状态栏里</strong>。用户看到"操作已成功完成"，然后去找为什么没成功——往一个完全错误的方向找。</p>
+    <p><strong>修法</strong>：加了个 <code>winErr()</code>，把 errno 判出来显示<strong>数字错误码</strong>：</p>
+<pre><code>func winErr(err error) string {
+	var errno syscall.Errno
+	if !errors.As(err, &amp;errno) {
+		return err.Error()
+	}
+	if errno == 0 {
+		return "系统未报告错误码"
+	}
+	return fmt.Sprintf("%v（错误码 %d）", errno, int(errno))
+}</code></pre>
+    <p>五个调用点全部从 <code>%w</code> 改成 <code>%s</code> + <code>winErr(err)</code>。</p>
+    <div class="callout danger">
+      <p><strong>通用教训：</strong>一个措辞是"成功"的错误，比一个措辞含糊的错误危险得多。</p>
+    </div>
+  </div>
+
+  <div class="pit" id="pit-clip-3">
+    <h4><span class="n">坑 3</span><span>剪贴板是一把全局独占锁，而且不可重入</span></h4>
+    <p>剪贴板同一时刻只能被一个进程打开。更麻烦的是它<strong>在同一进程内也不可重入</strong>——第二个线程会失败，而不是排队。</p>
+    <p>浏览器可以同时开多个连接，两个客户端完全可能同时按 <code>Ctrl+C</code>。</p>
+    <p><strong>修法</strong>：进程级 <code>sync.Mutex</code> 把每一次 open/close 括起来，配 10 次重试 × 20ms 退避：</p>
+<pre><code>var clipboardMu sync.Mutex
+
+func openClipboard() (func(), error) {
+	clipboardMu.Lock()
+	for attempt := 0; attempt &lt; clipboardOpenAttempts; attempt++ {
+		ok, _, _ := procOpenClipboard.Call(0)
+		if ok != 0 {
+			return func() { procCloseClipboard.Call(); clipboardMu.Unlock() }, nil
+		}
+		if attempt &lt; clipboardOpenAttempts-1 {
+			time.Sleep(clipboardOpenBackoff)
+		}
+	}
+	clipboardMu.Unlock()
+	return nil, ErrClipboardBusy
+}</code></pre>
+    <p>注意返回的是个 <code>func()</code> 而不是直接返回 error——<strong>关闭必须和加锁配对</strong>，用闭包可以保证 <code>defer</code> 一定成对执行。</p>
+    <div class="callout warn">
+      <p>原来的重试循环本身也能让输的一方最终成功，但那要等 200ms 才失败。加锁把"200ms 后报错"变成"几毫秒后成功"。</p>
+    </div>
+  </div>
+
+  <div class="pit" id="pit-clip-4">
+    <h4><span class="n">坑 4</span><span><code>SetClipboardData</code> 成功后内存所有权转移给系统</span></h4>
+<pre><code>// 成功：系统接管了这块内存
+// 失败：必须自己释放，否则泄漏</code></pre>
+    <p>顺序也容易错：块必须在 <code>CloseClipboard</code> <strong>之前</strong>解锁（<code>GlobalUnlock</code>），而 <code>CloseClipboard</code> 之后就不能再碰它了。</p>
+  </div>
+
+  <div class="pit" id="pit-clip-5">
+    <h4><span class="n">坑 5</span><span><code>GlobalSize</code> 只是上界，块不保证以 NUL 结尾</span></h4>
+    <p>读的时候不能假定"拿到指针就能当字符串用"。必须在 <code>GlobalSize</code> 给的范围内<strong>扫描</strong>，而不是依赖结尾的 NUL。</p>
+  </div>
+
+  <div class="pit" id="pit-clip-6">
+    <h4><span class="n">坑 6</span><span>上限必须小于 gorilla 的读上限</span></h4>
+    <p><code>maxMessageSize = 1 &lt;&lt; 20</code>（1 MiB）是 gorilla 的<strong>读</strong>限制。超了不是返回错误，而是<strong>直接关闭连接</strong>。</p>
+    <p>所以剪贴板上限取 <code>MaxClipboardBytes = 256 &lt;&lt; 10</code>（256 KB），<strong>刻意的四分之一</strong>：</p>
+<pre><code>// It is deliberately a quarter of maxMessageSize. That limit is enforced by the
+// ...
+const MaxClipboardBytes = 256 &lt;&lt; 10</code></pre>
+    <p>留出四倍余量是因为上限按<strong>字节</strong>算，而剪贴板内容按 UTF-16 单元算，JSON 转义还会再膨胀。</p>
+  </div>
+
+  <div class="pit" id="pit-clip-7">
+    <h4><span class="n">坑 7</span><span><code>Ctrl+C</code> 的取回必须挂在 <strong>keyup</strong>，不是 keydown</span></h4>
+    <p>Windows 的输入队列是<strong>每线程 FIFO</strong>。所以：</p>
+    <ul>
+      <li>keydown 到达远程 → 应用处理它 → 应用写剪贴板 → <strong>然后</strong> keyup 才到达。</li>
+    </ul>
+    <p>如果在 keydown 时就拉剪贴板，拉到的还是<strong>上一次</strong>的内容。挂在 keyup 上，应用才保证已经写完了。</p>
+  </div>
+
+  <div class="pit" id="pit-clip-8">
+    <h4><span class="n">坑 8</span><span>只读回自己写的内容，等于什么都没验证</span></h4>
+    <p>这条单独列出来，因为它是<strong>验证方法论</strong>上的坑，不是代码坑。</p>
+    <p>最初的自测是"写进去，再用我们自己的读函数读出来，内容一样 → 通过"。但这<strong>只能证明读写自洽</strong>：如果两个函数在同一个地方一起写错了（比如字节序、编码），它会照样通过。</p>
+    <p>决定性的验证必须<strong>换一个主体</strong>：用 PowerShell 的 <code>Get-Clipboard</code> 在<strong>另一个进程</strong>里读。</p>
+  </div>
+
+  <div class="pit" id="pit-clip-9">
+    <h4><span class="n">坑 9</span><span>GitHub 的锚点是"删标点"，不是"把标点换成连字符"</span></h4>
+    <p>改 README 时算错了两处锚点。我一开始按"标点 → 连字符"推理，写出了 <code>#63-粘贴ctrlv-把本机剪贴板送到远程</code>。</p>
+    <p>正确的算法是：<strong>小写 → 删除所有非字母/数字/空格/连字符/下划线/CJK 的字符 → 空格换成连字符</strong>。标点是<strong>直接删掉</strong>，不留痕迹。</p>
+    <p>所以 <code>### 6.3 粘贴（Ctrl+V：把本机剪贴板送到远程）</code> 的实际锚点是：</p>
+<pre><code>#63-粘贴ctrlv把本机剪贴板送到远程</code></pre>
+    <p><code>.</code> <code>空格</code> <code>（</code> <code>）</code> <code>：</code> <code>+</code> <strong>全部消失</strong>，<code>Ctrl+V</code> 的 <code>+</code> 也没了，所以是 <code>ctrlv</code> 连在一起。</p>
+    <p>验证方法是拿一个<strong>已经存在且确定能用</strong>的锚点反推：<code>### 5.1 直接启用 HTTPS（wss://）</code> → <code>#51-直接启用-httpswss</code>（<code>.</code> 删掉变成 <code>51</code>，<code>//</code> 和 <code>:</code> 删掉变成 <code>wss</code>，<code>HTTPS</code> 小写）。对得上，算法就对了。</p>
+  </div>
+
+  <hr>
+
+  <h2 id="s2">2. 滚轮方向反了</h2>
+
+  <h3 id="s2-1">2.1 问题</h3>
+
+  <blockquote>
+    <p>我发现滚轮操作是反的，修改一下。</p>
+  </blockquote>
+
+  <h3 id="s2-2">2.2 根因：两个轴的约定<strong>一个反、一个不反</strong></h3>
+
+  <p>这是整轮改动里唯一的真实 bug，而它的狡猾之处在于<strong>不对称</strong>：</p>
+
+  <div class="tw">
+  <table>
+    <thead>
+      <tr><th>轴</th><th>浏览器</th><th>Windows</th><th>关系</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>竖直</td>
+        <td><code>deltaY &gt; 0</code> = 向下滚</td>
+        <td><code>MOUSEEVENTF_WHEEL</code> 正值 = <strong>向上</strong>滚</td>
+        <td><strong style="color:#c0392b">相反</strong></td>
+      </tr>
+      <tr>
+        <td>水平</td>
+        <td><code>deltaX &gt; 0</code> = 向右滚</td>
+        <td><code>MOUSEEVENTF_HWHEEL</code> 正值 = 向右滚</td>
+        <td><strong style="color:#2f7a49">一致</strong></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>所以<strong>只有竖直轴需要翻转</strong>。</p>
+
+  <h3 id="s2-3">2.3 方案</h3>
+
+  <p>翻转放在<strong>服务端</strong>，而且写在注释里说明为什么不放在浏览器：</p>
+
+<pre><code>func (c *Client) handleWheel(msg *clientMsg) error {
+	c.wheelAccX += msg.DeltaX
+	c.wheelAccY -= msg.DeltaY   // 只有这里翻转
+
+	unitsX := takeNotches(&amp;c.wheelAccX)
+	unitsY := takeNotches(&amp;c.wheelAccY)
+	if unitsX == 0 &amp;&amp; unitsY == 0 {
+		return nil
+	}
+	return c.hub.inj.Wheel(unitsX, unitsY)
+}</code></pre>
+
+  <p>理由是<strong>保持线上格式为浏览器原始像素</strong>——协议层只做搬运，不做解释，这样以后要接别的客户端（比如原生 App）时，两边对"发什么"的理解是一致的。</p>
+
+  <p>换算常量：<code>wheelPixelsPerNotch = 100.0</code>（100 浏览器像素 = 1 格），一格 = <code>wheelDelta = 120</code> 个 Windows 单位。不足一格的余量累积到下一次，所以触控板的小步滚动不会丢。</p>
+
+  <h3 id="s2-4">2.4 验证：证明测试有牙齿</h3>
+
+  <p>新增 <code>TestWheelDirection</code>，把<strong>两个轴</strong>的方向都钉住：</p>
+
+<pre><code>if err := c.handleWheel(&amp;clientMsg{DeltaY: wheelPixelsPerNotch}); err != nil { ... }
+if inj.wheelY != -wheelDelta { ... }   // 浏览器向下滚 → Windows 必须是负
+
+// 水平两个约定本来就一致，所以这个**不能**跟着竖直一起被翻转
+if inj.wheelX != wheelDelta { ... }</code></pre>
+
+  <p><strong>关键动作</strong>：把 <code>-=</code> 临时改回 <code>+=</code> 重跑，确认它以<strong>用户报的症状</strong>失败：</p>
+
+<pre><code>a browser scroll down produced 120 Windows units, want -120</code></pre>
+
+  <p>然后改回来。这一步确认了测试<strong>不是空的</strong>——如果它改坏了也照样通过，那它就只是个装饰。</p>
+
+  <h3>2.5 附带修掉的债</h3>
+
+  <p><code>gofmt -l</code> 在 <code>server/hub_test.go</code> 报了一处格式问题。查下来是<strong>第 202 行的注释对齐</strong>，属于<strong>既有债，不是这次引入的</strong>（我新加的代码是干净的）。</p>
+
+  <p>因为已经在改这个文件，就顺手修了。另外两个也在债单上的文件（<code>server/input.go</code>、<code>server/win32_windows.go</code>）<strong>故意没动</strong>——避免把无关改动混进来，让 diff 保持可读。</p>
+
+  <div class="callout warn">
+    <p>顺带修了 <code>TestWheelAccumulation</code> 上一句陈旧的注释（写"Four 30px deltas"，循环其实只跑 3 次）。</p>
+  </div>
+
+  <hr>
+
+  <h2 id="s3">3. 手机触摸操作</h2>
+
+  <p>这一轮最大，也最值得写下来。</p>
+
+  <h3 id="s3-1">3.1 需求</h3>
+
+  <blockquote>
+    <p>我希望如果是手机端连接，能模仿 mstsc 的操作逻辑，长按表示右键，点一下松开再按下表示按住左键，鼠标移动逻辑也参考 mstsc，可以在界面选择鼠标模式和触屏模式。鼠标模式手指在屏幕上滑动只是操作指针往与手指相同的方向移动，而不是手指在哪鼠标就在哪，而触屏模式就像手机一样，点哪就是哪。</p>
+  </blockquote>
+
+  <p>两个需要用户拍板的取舍，都确认了：</p>
+
+  <ul>
+    <li><strong>第一下点击立即生效</strong>（不做 ~250ms 的延迟判定）。响应无延迟，代价是每次拖拽前会先多出一次单击。</li>
+    <li><strong>双指滚动这次一起做</strong>。否则手机端只能靠拖动滚动条。</li>
+  </ul>
+
+  <h3 id="s3-2">3.2 关键设计决定</h3>
+
+  <h4>决定 1：手势状态机独立成纯模块</h4>
+
+  <p><code>RemoteScreen.vue</code> 已经 1200+ 行，而这个功能的核心复杂度是<strong>「模式 × 手势 × 手指数」的组合</strong>。混进组件既难读，也<strong>没法验证</strong>。</p>
+
+  <p>而且前端<strong>没有任何测试框架</strong>（<code>package.json</code> 里只有 <code>vue-tsc</code> / <code>vite</code>，<code>src</code> 下没有任何 <code>*.test.ts</code>）。</p>
+
+  <p>于是新增 <code>frontend/src/touch.ts</code>：<strong>不 import 任何 DOM、时钟由外部注入、输出是一个 action 列表</strong>。这带来两个好处：</p>
+
+  <ol>
+    <li>逻辑可以脱离浏览器验证（见 <a href="#s3-5">3.5</a>）。</li>
+    <li><strong>计时器变成可以合成时间戳驱动的</strong>——长按和拖拽起手不依赖 <code>setTimeout</code> 的内部状态，可以用 <code>tick(合成时间)</code> 精确地走到"差 1ms 还没触发"和"刚好触发"。</li>
+  </ol>
+
+  <h4>决定 2：模式只影响触摸和手写笔，物理鼠标永远绝对定位</h4>
+
+  <p>用 <code>e.pointerType</code> 区分。<code>'mouse'</code> 在任何模式下都保持原来的绝对行为。</p>
+
+  <p>理由：把真实鼠标改成相对移动是<strong>反直觉</strong>的，平板接了蓝牙鼠标的用户会立刻觉得"鼠标坏了"。</p>
+
+  <h4>决定 3：相对位移的换算基准是"画出来的图像"，不是 canvas 元素</h4>
+
+<pre><code>remotePx = cssPx × (remoteW / 绘制区域CSS宽度)</code></pre>
+
+  <p>即"手指划过整个画面宽度 = 指针走过整个远程桌面宽度"，与 <code>-scale</code> 和窗口大小无关。</p>
+
+  <p>注意是<strong>绘制区域</strong>而不是 canvas 元素——画面是 letterbox 的，用元素宽度会被黑边稀释。</p>
+
+  <h4>决定 4：双指滚动按<strong>浏览器约定</strong>发送</h4>
+
+  <p>与手机一致：<strong>双指上滑 = 页面向下滚</strong>。所以 <code>wheelDeltaY = -手指位移Y</code>。</p>
+
+  <div class="callout danger">
+    <p>这里有个<strong>容易重复踩的坑</strong>：服务端在 <code>handleWheel</code> 里已经对竖直方向翻转过（第 2 节）。所以前端<strong>要按浏览器约定原样发送，不要预先抵消</strong>，否则翻两次等于没翻。</p>
+  </div>
+
+  <h3 id="s3-3">3.3 状态机</h3>
+
+<pre><code>idle ──down(距上次抬起 &lt;400ms)──&gt; dragArm ──200ms 内没抬起──&gt; dragHold
+  │                                  │                          │
+  │                                  └──抬起──&gt; 第二次单击        └──抬起──&gt; mouseup left
+  │                                     (= 双击的后半)
+  └──down(否则)──&gt; press ──按住 ≥500ms 且没怎么动──&gt; 右键单击（本次手势结束）
+                     │
+                     ├──移动超过 12px──&gt; 取消长按与单击
+                     │                  (鼠标模式下仍只移动指针)
+                     └──抬起──&gt; 左键单击</code></pre>
+
+  <p>常量（集中在文件顶部，每条都写明理由）：</p>
+
+  <div class="tw">
+  <table>
+    <thead>
+      <tr><th>常量</th><th>值</th><th>理由</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>LONG_PRESS_MS</code></td><td>500</td><td>Android / iOS 系统自己的长按超时，符合手的预期</td></tr>
+      <tr><td><code>DRAG_ARM_MS</code></td><td>200</td><td>短，因为拖拽还有个"移动即起手"的快速路径，这个延迟只对完全静止的手有影响</td></tr>
+      <tr><td><code>DOUBLE_TAP_MS</code></td><td>400</td><td>两次点击判定为同一手势的窗口</td></tr>
+      <tr><td><code>MOVE_TOLERANCE_PX</code></td><td>12</td><td>手指落下和抬起时会滚动，要吸收掉；太松则短拖会被误判成点击</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><strong>两个模式的差异只有一处</strong>：手指的位置是不是指针的位置。</p>
+
+  <div class="tw">
+  <table>
+    <thead>
+      <tr><th></th><th>触屏模式</th><th>鼠标模式</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>轻点</td><td>手指点在哪里，就在哪里点击</td><td>在<strong>指针当前所在处</strong>点击</td></tr>
+      <tr><td>滑动</td><td>不移动指针</td><td>指针朝与手指<strong>相同</strong>的方向移动</td></tr>
+      <tr><td>拖动</td><td>指针跟着手指走</td><td>指针跟着手指的位移走</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3 id="s3-4">3.4 工程实现上的配套</h3>
+
+  <ul>
+    <li><strong>按 <code>pointerId</code> 追踪活动指针</strong>（一个 <code>Set</code> 就够）。原来是单指针假设，第二个手指会让它们互相踩。</li>
+    <li><strong>手势期间跑 25ms 的 <code>setInterval</code> 驱动 <code>tick()</code></strong>，无手势时停掉，不空转。</li>
+    <li><strong><code>releaseAllButtons()</code></strong>，照 <code>releaseAllKeys</code> 的样子写，接 <code>window blur</code> / <code>visibilitychange</code> / <code>pointercancel</code>。</li>
+    <li><strong>工具栏</strong>：8 个控件在手机宽度下放不下 → <code>flex-wrap</code> + 窄屏隐藏品牌 + <code>@media (pointer: coarse)</code> 下按钮撑到 40px。</li>
+    <li><strong>模式选择只在 <code>maxTouchPoints &gt; 0</code> 时出现</strong>——它对鼠标毫无作用，没必要占位置。</li>
+  </ul>
+
+  <h3 id="s3-5">3.5 验证</h3>
+
+  <p>分两层，两层互补，<strong>都不需要手机</strong>。</p>
+
+  <h4>第一层：状态机（42 条断言）</h4>
+
+  <p>用 <code>npx esbuild</code> 把 <code>touch.ts</code> 转成 js（vite 自带 esbuild，<strong>不引入任何新依赖</strong>），再用 node 喂合成时间戳，把每条路径跑一遍并打印 action：</p>
+
+  <p>单击 / 长按右键 / 点一下再按住拖拽 / 移动起手拖拽 / 两次快速点击 / 滑动超过容差后抬起（不应有单击）/ 双指滚动（含竖直符号）/ 第二指落下时左键正被按住（应补 <code>mouseup</code>）/ 两种模式的差异 / 指针裁剪 / <code>reset</code> / 切换模式。</p>
+
+  <h4>第二层：真·浏览器（20 条断言）</h4>
+
+  <p><strong>headless Chrome + CDP</strong>，把 <code>WebSocket</code> 在页面里替换成桩，用 <code>Input.dispatchTouchEvent</code> 合成触摸，断言<strong>页面实际发出了什么</strong>。</p>
+
+  <p>这一层才覆盖到单元测试够不着的东西：<strong>坐标映射、事件管线、发送顺序、tick 定时器</strong>。</p>
+
+  <p>几个关键技巧，值得复用：</p>
+
+  <ul>
+    <li><strong>不需要服务端</strong>。桩会回一条 <code>screen</code> 控制消息 + 一个 JPEG。</li>
+    <li><strong>必须先有一帧被解码</strong>才能测。<code>view</code>（绘制矩形）只在 <code>paint()</code> 里算，而 <code>paint()</code> 需要一帧。所以桩必须发一帧真的 JPEG——用页面内 canvas 的 <code>toBlob('image/jpeg')</code> 现做一个，不用内嵌字节。</li>
+    <li><strong><code>maxTouchPoints</code> 要在 bundle 之前注入</strong>（<code>Page.addScriptToEvaluateOnNewDocument</code> 里 <code>Object.defineProperty</code>），否则工具栏那组模式按钮根本不渲染。</li>
+    <li><strong>相对模式和绝对模式不能靠"增量"区分</strong>——两者每步的增量是<strong>一样的</strong>。必须先让触屏模式把指针停在一个<strong>已知位置</strong>，再比<strong>落点</strong>。</li>
+    <li><strong>完全绕开了本机的工作站焦点争用问题</strong>（见记忆 <code>workstation-focus-contention</code>），因为整个过程不碰真实桌面。</li>
+  </ul>
+
+  <h3 id="s3-6">3.6 踩过的坑</h3>
+
+  <div class="pit" id="pit-touch-1">
+    <h4><span class="n">坑 1</span><span>拖拽起点错误（状态机测试抓到）</span></h4>
+    <p>靠<strong>移动</strong>进入 <code>dragHold</code> 时，触屏模式下<strong>没有把指针移到手指处</strong>。</p>
+    <p>后果：拖拽会从"上一次点击所在的位置"开始，然后被手指的第一次移动猛地拽过来。</p>
+<pre><code>// 修法：进入 dragHold 时补一个绝对移动
+if (this.mode === 'touch') actions.push(...this.absoluteMove(x, y))
+actions.push({ kind: 'button', button: 'left', down: true })</code></pre>
+    <p>顺序也有讲究：<strong>先移动，再按下左键</strong>。</p>
+  </div>
+
+  <div class="pit" id="pit-touch-2">
+    <h4><span class="n">坑 2</span><span>点击位置过期（e2e 抓到）</span></h4>
+    <p>一次轻点在<strong>同一个批次</strong>里产生 <code>moveTo</code> + <code>click</code>。而 <code>moveTo</code> 走的是 rAF 合并（为了不淹没 socket），于是它可能<strong>比 click 晚发</strong>——点击落在指针的<strong>上一个位置</strong>。</p>
+    <p><strong>修法</strong>：任何按键事件之前先 <code>flushMove()</code>：</p>
+<pre><code>case 'click':
+  flushMove()   // 否则点击会落在指针的上一个位置
+  client?.send({ type: 'mousedown', button: a.button })
+  client?.send({ type: 'mouseup', button: a.button })
+  break</code></pre>
+    <p>这个 bug 在<strong>鼠标路径上也潜伏着</strong>（只是实际中 mousemove 总比 mousedown 早很多帧，暴露不出来），一并修了。</p>
+    <div class="callout danger">
+      <p><strong>通用教训：</strong><strong>合并（coalescing）会打乱顺序</strong>。任何"延迟到下一帧再发"的优化，都必须在使用它的事件之前显式 flush。</p>
+    </div>
+  </div>
+
+  <div class="pit" id="pit-touch-3">
+    <h4><span class="n">坑 3</span><span><code>pointerMove</code> 的 <code>now</code> 参数是死参数</span></h4>
+    <p>最初 <code>pointerMove(id, x, y, now)</code> 为了和 <code>pointerDown</code> / <code>pointerUp</code> 对称，也接收了时间戳。但编译器直接指出它没被用过。</p>
+    <p>想了一下：<strong>移动本身已经说明了意图，静止才是计时器的事</strong>。一个在动的手指会通过"漂移超过容差"取消长按，不需要时钟。</p>
+    <p>于是<strong>删掉参数</strong>，而不是留一个 <code>_now</code> 占位。</p>
+    <div class="callout warn">
+      <p>留一个用不上的参数，比删掉它更贵——它会让下一个人以为这里有时间语义。</p>
+    </div>
+  </div>
+
+  <div class="pit" id="pit-touch-4">
+    <h4><span class="n">坑 4</span><span><code>e.preventDefault()</code> 挡不住 iOS 的系统菜单</span></h4>
+    <p>长按会弹出 iOS 自己的选择气泡，右键就发不出去了。必须在 CSS 上彻底关掉：</p>
+<pre><code>.screen-canvas {
+  touch-action: none;          /* 原本就有 */
+  -webkit-touch-callout: none; /* 长按不弹系统菜单 */
+  -webkit-user-select: none;
+  user-select: none;
+}</code></pre>
+  </div>
+
+  <div class="pit" id="pit-touch-5">
+    <h4><span class="n">坑 5</span><span>按键有"失焦全松"保护，鼠标键没有</span></h4>
+    <p>按键早就有 <code>releaseAllKeys()</code> 挂在 <code>window blur</code> 上——切标签页时 <code>Ctrl</code> 不会卡在远程。</p>
+    <p>但<strong>鼠标键没有对应的保护</strong>。触摸端一次意外切后台（切标签页、来电、失焦），远程就会<strong>一直处于按住左键的状态</strong>，用户回来发现整个桌面在跟着手指拖。</p>
+    <p><strong>修法</strong>：加 <code>releaseAllButtons()</code>，并把两者合成 <code>releaseAll()</code>，接上 <code>window blur</code> / <code>visibilitychange</code> / <code>pointercancel</code>。</p>
+    <p>顺带补了 <code>visibilitychange</code> 的"切走时松手"分支——隐藏标签页里定时器会被降频，手势会<strong>冻在半路</strong>而按钮还按着。</p>
+  </div>
+
+  <div class="pit" id="pit-touch-6">
+    <h4><span class="n">坑 6</span><span>单指针假设是<strong>隐藏</strong>的</span></h4>
+    <p>原来的 <code>pendingMove</code> / <code>moveScheduled</code> / <code>dropping</code> 全都是单指针假设，第二个手指会让它们互相踩。<strong>这是双指滚动的硬性前提</strong>，不是可以后补的优化。</p>
+    <div class="callout warn">
+      <p>这类"隐藏的单实例假设"和剪贴板的"全局独占锁"是同一类东西：代码在只有一个人用的时候完全正确。</p>
+    </div>
+  </div>
+
+  <div class="pit" id="pit-touch-7">
+    <h4><span class="n">坑 7</span><span>写测试时踩的坑，本身就是信息</span></h4>
+    <p>我自己写的测试脚本失败了好几次，<strong>每一次失败都是真实的语义</strong>，不是测试写错那么简单：</p>
+    <ul>
+      <li><strong>两次手势之间必须留够 400ms</strong>。否则第二次按下会被认为是"拖拽的起手"（设计的双击窗口），长按测试就没有长按。真机上这也是这个行为——它<strong>是设计</strong>，只是在测试里咬人。</li>
+      <li><strong>双指滚动的量是两指的质心位移</strong>，所以"一根手指动 50px、另一根不动"只滚 25px。我一开始按 50 写断言，失败了——<strong>代码是对的，断言是错的</strong>。</li>
+      <li><strong>鼠标模式下"滑动后抬起"不产生点击</strong>。因为移动超过容差就取消了点击判定——这<strong>正是触控板 tap-to-click 的行为</strong>（滑过之后不点）。我一开始断言它会点，失败了，代码又是对的。</li>
+    </ul>
+    <div class="callout ok">
+      <p>这三个坑的共同点：<strong>我的直觉假设比代码更值得怀疑</strong>。测试失败时，先问"是不是代码比我以为的更对"。</p>
+    </div>
+  </div>
+
+  <div class="pit" id="pit-touch-8">
+    <h4><span class="n">坑 8</span><span>测试脚本自身的时序 bug</span></h4>
+    <p>e2e 最后一轮回归时，"切换模式应该松开按住的键"这条失败了，返回空数组。</p>
+    <p>原因是我在重构脚本时<strong>多加了一句 <code>sleep(600)</code></strong>，把第二次按下推出了 400ms 的双击窗口，于是它变成了一个全新的 <code>press</code>——而 400ms 又不够 500ms 的长按。<strong>压根没有按键被按住</strong>，自然也没什么可松开的。</p>
+    <div class="callout warn">
+      <p>教训：<strong>同一个测试脚本改了之后要重跑全部</strong>，不能只跑被改的那段。</p>
+    </div>
+  </div>
+
+  <div class="pit" id="pit-touch-9">
+    <h4><span class="n">坑 9</span><span>比例尺要用"绘制区域"而不是"元素"</span></h4>
+    <p><code>updateTouchScale()</code> 一开始用的是 <code>canvas.getBoundingClientRect().width</code>。改成按绘制区域算：</p>
+<pre><code>const paintedW = (view.dw / canvas.width) * rect.width
+gestures.setScale(remoteW.value / paintedW, remoteH.value / paintedH)</code></pre>
+    <p>顺带发现调用时机也错了：原来在 <code>resizeCanvas()</code> 里 <code>draw()</code> <strong>之前</strong>调，而 <code>view</code> 只有 <code>draw()</code> 里才重算，所以拿到的永远是<strong>上一次布局</strong>的值。移到 <code>draw()</code> <strong>之后</strong>。</p>
+  </div>
+
+  <h3 id="s3-7">3.7 与计划的偏差</h3>
+
+  <p>两处，都是实现时发现计划里没考虑到：</p>
+
+  <ol>
+    <li><strong>模式选择只在 <code>maxTouchPoints &gt; 0</code> 时渲染。</strong>计划是常驻。但一组对鼠标毫无作用的按钮，挤在已经有 7 个控件的工具栏里，只会造成困惑。</li>
+    <li><strong>手写笔（<code>pen</code>）归到触摸一类</strong>，跟随所选模式，而不是保持绝对定位。</li>
+  </ol>
+
+  <hr>
+
+  <h2 id="s4">4. 附：远程画面里为什么看不到指针（调研，未实施）</h2>
+
+  <div class="callout warn">
+    <p>这一节只是调研结论，<strong>没有改代码</strong>。</p>
+  </div>
+
+  <h3 id="s4-1">4.1 直接原因</h3>
+
+  <p><code>server/capture_windows.go:173</code> 用 <code>BitBlt</code> 从屏幕 DC 拷贝到内存 DC。而<strong>光标不在桌面缓冲里</strong>——它是独立于桌面像素之外的一层，由显示硬件 / DWM 合成器单独叠加。所以无论怎么抓，像素里都没有它。</p>
+
+  <div class="callout danger">
+    <p><strong>这不是 <code>CAPTUREBLT</code> 的问题。</strong>那个标志位（<code>capture_windows.go:169</code>）额外包含的是 <em>layered window</em>（工具提示、部分悬浮层），<strong>不含光标</strong>。这是个很常见的误解，<code>PrintWindow(PW_RENDERFULLCONTENT)</code> 同样不包含。</p>
+  </div>
+
+  <h3 id="s4-2">4.2 要怎么修</h3>
+
+  <p>只能自己画上去：</p>
+
+  <ol>
+    <li><code>GetCursorInfo</code> → 拿到 <code>hCursor</code>、<code>ptScreenPos</code> 和 <code>CURSOR_SHOWING</code> 标志（不显示时不能画）。</li>
+    <li><code>GetIconInfo</code> → 拿到 <strong>hotspot</strong>。这一步容易漏：<strong>光标位置指的是它的热点（箭头尖），不是位图左上角</strong>，不减 hotspot 会整体偏移。</li>
+    <li><code>DrawIconEx(..., DI_NORMAL)</code> 画到内存 DC 上，必须在读 DIB <strong>之前</strong>。</li>
+  </ol>
+
+  <h3 id="s4-3">4.3 坑</h3>
+
+  <ul>
+    <li><strong><code>GetIconInfo</code> 每次都分配 <code>hbmMask</code> / <code>hbmColor</code> 两个位图，必须 <code>DeleteObject</code>。</strong>15fps 下每秒漏 30 个 GDI 句柄，默认上限 1 万个，<strong>几分钟就耗尽</strong>，症状是抓屏开始失败或画面花掉。这是最容易出事的地方。</li>
+    <li>单色光标 <code>hbmColor</code> 为 NULL，<code>DI_NORMAL</code> 配合掩码仍然能画。</li>
+    <li><code>StretchBlt</code> 那条分支（<code>-scale</code> 时走）要按缩放比例换算坐标，否则光标位置会偏。</li>
+  </ul>
+
+  <h3 id="s4-4">4.4 为什么说它不是一行代码</h3>
+
+  <p>画面里一旦有了光标，<strong>鼠标划过静止画面就会改变像素</strong>，<code>frame_diff.go</code> 的静止停发立刻失效。</p>
+
+  <p>现在这种场景带宽是 <strong>0</strong>（盯着文档时鼠标乱动不花任何流量），改完会直接顶到满帧率。</p>
+
+  <p><code>server/ws.go:496</code> 那处注释早就写明了这一点：</p>
+
+  <blockquote>
+    <p>GDI's BitBlt never composites the mouse cursor, so moving the pointer across a still screen leaves the pixels identical. That is why cursor motion alone sends nothing -- and why adding cursor compositing to the capture would need this comparison revisited.</p>
+  </blockquote>
+
+  <p>所以真要做得<strong>配套决定</strong>"光标区域的差异不算变化"，否则就是拿带宽换指针。</p>
+
+  <hr>
+
+  <h2 id="s5">5. 跨功能的通用教训</h2>
+
+  <p>把上面散落的坑提炼一下：</p>
+
+  <div class="lesson">
+    <h3><span class="n">1</span><span>文档会骗人，实证不会</span></h3>
+    <p><code>OpenClipboard(NULL)</code> 有三处官方文档说必然失败。实测可用。</p>
+    <p>判断标准不是"文档怎么说"，而是<strong>失败的形态</strong>：如果它真的坏了，是响亮的（返回 0 + 用户可见的报错），那就不值得为它预先引入一个隐藏窗口 + 专用线程 + 消息循环。</p>
+  </div>
+
+  <div class="lesson">
+    <h3><span class="n">2</span><span>措辞为"成功"的错误最危险</span></h3>
+    <p><code>Errno(0).Error()</code> = <code>"The operation completed successfully."</code>，而它会<strong>原样显示给用户</strong>。</p>
+    <p>错误信息要把<strong>数字码</strong>带出来。含糊的错误让人困惑，"成功"的错误把人带向完全错误的方向。</p>
+  </div>
+
+  <div class="lesson">
+    <h3><span class="n">3</span><span>对称性假设必须逐个轴验证</span></h3>
+    <p>滚轮两个轴，一个反、一个不反。想当然地"两个都翻"或"两个都不翻"都是错的。</p>
+    <p><strong>同一类东西的不同维度，约定未必一致。</strong></p>
+  </div>
+
+  <div class="lesson">
+    <h3><span class="n">4</span><span>测试自己也要被测试</span></h3>
+    <p>证明 <code>TestWheelDirection</code> 有牙齿的办法，是<strong>把修复改回去</strong>，看它是不是按用户报的症状失败。</p>
+    <p>一个永远通过的测试不是保障，是装饰。</p>
+  </div>
+
+  <div class="lesson">
+    <h3><span class="n">5</span><span>单一的验证主体证明不了正确性</span></h3>
+    <p>"写进去再用自己的读函数读出来一样"——只能证明<strong>自洽</strong>。</p>
+    <p>必须换一个主体：<strong>另一个进程</strong>的 <code>Get-Clipboard</code>，或者<strong>另一个执行环境</strong>（headless 浏览器）。</p>
+  </div>
+
+  <div class="lesson">
+    <h3><span class="n">6</span><span>隐藏的"单实例假设"是最贵的债</span></h3>
+    <ul>
+      <li><code>pendingMove</code> / <code>moveScheduled</code> / <code>dropping</code> 都假设只有一个指针。</li>
+      <li>剪贴板假设只有一个持有者（而且<strong>同进程内都不可重入</strong>）。</li>
+    </ul>
+    <p>这些代码在<strong>只有一个人用的时候完全正确</strong>，所以不会被发现，直到第二个手指 / 第二个客户端出现。</p>
+  </div>
+
+  <div class="lesson">
+    <h3><span class="n">7</span><span>合并会打乱顺序</span></h3>
+    <p>任何"延迟到下一帧再发"的优化，都必须在<strong>使用它的事件之前</strong>显式 flush。</p>
+    <p><code>moveTo</code> 被 rAF 合并，<code>click</code> 就不会等它——点击落在指针的上一个位置。</p>
+  </div>
+
+  <div class="lesson">
+    <h3><span class="n">8</span><span>直觉比代码更值得怀疑</span></h3>
+    <p>写测试时三次失败，三次都是<strong>我的断言错了、代码是对的</strong>：</p>
+    <ul>
+      <li>鼠标模式下滑动后不点击 —— 那正是触控板 tap-to-click 的行为。</li>
+      <li>双指滚动只算质心位移 —— 所以单指动 50px 只滚 25px。</li>
+      <li>两次手势之间必须留够双击窗口 —— 那<strong>是设计</strong>。</li>
+    </ul>
+    <p>测试失败时，先问一句：<strong>是不是代码比我以为的更对？</strong></p>
+  </div>
+
+  <div class="lesson">
+    <h3><span class="n">9</span><span>前端没有测试框架，不等于没法验证</span></h3>
+    <p><code>touch.ts</code> 的三个性质让它可以被验证，而这三个性质<strong>都是设计出来的</strong>：</p>
+    <ol>
+      <li><strong>不依赖 DOM</strong> → 可以在 node 里跑。</li>
+      <li><strong>时钟由外部注入</strong> → 计时逻辑可以用合成时间戳精确走到边界。</li>
+      <li><strong>输出是数据（action 列表）而不是副作用</strong> → 可以直接断言。</li>
+    </ol>
+    <p>再往上一层，<strong>headless Chrome + CDP</strong> 用一个桩 websocket 就能覆盖真实的 DOM 事件管线，且<strong>不碰真实桌面</strong>——顺带绕开了本机的工作站焦点争用问题。</p>
+    <p><strong>不引入测试框架，也可以有测试。</strong></p>
+  </div>
+
+  <hr>
+
+  <h2 id="files">附：本轮改动涉及的文件</h2>
+
+<pre><code>server/
+  clipboard_windows.go    # 剪贴板读写：进程级互斥 + winErr() 数字错误码
+  clipboard.go            # 大小上限（256KB，maxMessageSize 的四分之一）
+  ws.go                   # 协议：clipboard_pull/push + clipboard 下行；handleWheel 符号翻转
+  hub_test.go             # TestWheelDirection（两个轴都钉住）
+
+frontend/src/
+  touch.ts                # 新增：触摸手势状态机（纯逻辑、无 DOM、时钟注入）
+  ws.ts                   # onClipboard 处理器 + ClipboardResult 类型
+  App.vue                 # 模式分段控件 + 工具栏响应式（wrap / 窄屏 / coarse pointer）
+  components/
+    RemoteScreen.vue      # 触摸路径与鼠标路径分流、tick 定时器、releaseAllButtons
+
+README.md                 # §4 表格、§4.1 手机/平板操作、§8 协议、§10 问答、§11 限制</code></pre>
+
+  <p><strong>明确不做</strong>：捏合缩放、触摸模式下的指针位置指示器、引入前端测试框架、任何服务端改动（触摸那轮）。</p>
+
+  <footer>
+    webVNC 开发札记 · 2026-09-27 · 对应构建 <code>webvnc.exe</code> 19:56
+  </footer>
+
+  </main>
+</div>
+</div>
+
+<script>
+// Highlight the section currently in view in the table of contents.
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var targets = links.map(function (a) {
+    var id = a.getAttribute('href').slice(1);
+    return { link: a, el: document.getElementById(id) };
+  }).filter(function (t) { return t.el; });
+
+  function sync() {
+    var best = null;
+    for (var i = 0; i < targets.length; i++) {
+      var top = targets[i].el.getBoundingClientRect().top;
+      if (top - 90 <= 0) best = targets[i];
+      else break;
+    }
+    // Past the last heading? Keep the last one lit.
+    if (!best && targets.length) best = null;
+    links.forEach(function (a) { a.classList.remove('active'); });
+    if (best) best.link.classList.add('active');
+  }
+
+  var ticking = false;
+  window.addEventListener('scroll', function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () { ticking = false; sync(); });
+  }, { passive: true });
+
+  sync();
+})();
+</script>
+
+</body>
+</html>
